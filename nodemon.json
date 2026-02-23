@@ -1,0 +1,8 @@
+{
+  "watch": ["index.ts", "src"],
+  "ext": "ts,json",
+  "ignore": ["dist", "uploads", "node_modules"],
+  "execMap": {
+    "ts": "ts-node -T"
+  }
+}
