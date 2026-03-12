@@ -5,9 +5,10 @@ export interface ISticker extends Document {
   name: string
   description?: string
   category?: string
+  subcategory?: string
   tags?: string[]
-  pages: IPage[]           // first page = cover / preview
-  svgContent?: string      // pre-rendered SVG string for quick display
+  pages: IPage[]          
+  svgContent?: string     
   coverImageUrl?: string
   createdBy?: string
   isPublished: boolean

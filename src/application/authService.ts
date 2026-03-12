@@ -64,6 +64,8 @@ export const authService = {
       { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions
     )
 
+    await AdminUser.findByIdAndUpdate(user._id, { lastActiveAt: new Date() })
+
     return {
       _id: user._id.toString(),
       name: user.name,

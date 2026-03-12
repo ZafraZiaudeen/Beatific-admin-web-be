@@ -57,6 +57,7 @@ const StickerSchema = new Schema<ISticker>(
     name:          { type: String, required: true, trim: true },
     description:   { type: String, trim: true },
     category:      { type: String, trim: true },
+    subcategory:   { type: String, trim: true },
     tags:          { type: [String], default: [] },
     pages:         { type: [PageSchema], default: [] },
     svgContent:    String,

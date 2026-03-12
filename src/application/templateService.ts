@@ -2,21 +2,23 @@ import { Template } from '../domain/models/Template'
 import { ITemplate } from '../domain/interfaces/ITemplate'
 import { IPage } from '../domain/interfaces/IPage'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export interface CreateTemplateDto {
   name: string
   description?: string
   category?: string
+  subcategory?: string
   tags?: string[]
   pages: IPage[]
   coverImageUrl?: string
   createdBy?: string
+  isPublished?: boolean
 }
 
 export interface UpdateTemplateDto {
   name?: string
   description?: string
   category?: string
+  subcategory?: string
   tags?: string[]
   pages?: IPage[]
   coverImageUrl?: string
@@ -25,6 +27,7 @@ export interface UpdateTemplateDto {
 
 export interface ListTemplatesQuery {
   category?: string
+  subcategory?: string
   tags?: string
   isPublished?: string
   page?: string
@@ -32,15 +35,12 @@ export interface ListTemplatesQuery {
   search?: string
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
 export class TemplateService {
-  // Create
   async create(dto: CreateTemplateDto): Promise<ITemplate> {
-    const template = new Template(dto)
+    const template = new Template({ isPublished: true, ...dto })
     return template.save()
   }
 
-  // List with filters & pagination
   async list(query: ListTemplatesQuery): Promise<{
     data: ITemplate[]
     total: number
@@ -50,6 +50,8 @@ export class TemplateService {
     const filter: Record<string, unknown> = {}
 
     if (query.category) filter.category = query.category
+
+    if (query.subcategory) filter.subcategory = query.subcategory
 
     if (query.tags) {
       filter.tags = { $in: query.tags.split(',').map(t => t.trim()) }
@@ -78,33 +80,27 @@ export class TemplateService {
     return { data: data as unknown as ITemplate[], total, page, limit }
   }
 
-  // Get by ID
   async getById(id: string): Promise<ITemplate | null> {
     return Template.findById(id)
   }
 
-  // Update
   async update(id: string, dto: UpdateTemplateDto): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $set: dto }, { new: true, runValidators: true })
   }
 
-  // Delete
   async delete(id: string): Promise<boolean> {
     const result = await Template.findByIdAndDelete(id)
     return result !== null
   }
 
-  // Save pages (replace all pages for a template)
   async savePages(id: string, pages: IPage[]): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $set: { pages } }, { new: true })
   }
 
-  // Add a single page
   async addPage(id: string, page: IPage): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $push: { pages: page } }, { new: true })
   }
 
-  // Publish / unpublish
   async publish(id: string, isPublished: boolean): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $set: { isPublished } }, { new: true })
   }

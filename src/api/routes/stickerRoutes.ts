@@ -6,15 +6,6 @@ import { requireAuth } from '../middleware/authMiddleware'
 const router     = Router()
 const stickerSvc = new StickerService()
 
-router.use(requireAuth)
-
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const sticker = await stickerSvc.create(req.body)
-    res.status(201).json({ success: true, data: sticker })
-  } catch (err) { next(err) }
-})
-
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await stickerSvc.list(req.query as Record<string, string>)
@@ -30,7 +21,14 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err) }
 })
 
-router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const sticker = await stickerSvc.create(req.body)
+    res.status(201).json({ success: true, data: sticker })
+  } catch (err) { next(err) }
+})
+
+router.patch('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const sticker = await stickerSvc.update(req.params.id, req.body)
     if (!sticker) return res.status(404).json({ success: false, message: 'Sticker not found' })
@@ -38,7 +36,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   } catch (err) { next(err) }
 })
 
-router.put('/:id/pages', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id/pages', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { pages, svgContent } = req.body
     if (!Array.isArray(pages)) {
@@ -50,7 +48,7 @@ router.put('/:id/pages', async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err) }
 })
 
-router.patch('/:id/publish', async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/publish', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { isPublished } = req.body
     const sticker = await stickerSvc.publish(req.params.id, Boolean(isPublished))

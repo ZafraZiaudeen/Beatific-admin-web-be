@@ -3,20 +3,35 @@ import path from 'path'
 import fs from 'fs'
 import { v4 as uuidv4 } from 'uuid'
 import type { Request } from 'express'
+import { uploadToCloudinary, deleteFromCloudinary } from './cloudinary'
+
+function isCloudinaryConfigured(): boolean {
+  return !!(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  )
+}
+
+const USE_CLOUDINARY = isCloudinaryConfigured()
+
+console.log('[upload] Module loaded, USE_CLOUDINARY=', USE_CLOUDINARY, 'CLOUD_NAME=', process.env.CLOUDINARY_CLOUD_NAME ?? '(not set)')
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads')
 
-if (!fs.existsSync(UPLOAD_DIR)) {
+if (!USE_CLOUDINARY && !fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 }
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase()
-    cb(null, `${uuidv4()}${ext}`)
-  },
-})
+const storage = USE_CLOUDINARY
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+      filename: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase()
+        cb(null, `${uuidv4()}${ext}`)
+      },
+    })
 
 const fileFilter = (
   _req: Request,
@@ -38,8 +53,10 @@ export const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },  
 })
 
+export { USE_CLOUDINARY }
+
 export function buildFileUrl(req: Request, filename: string): string {
-  const baseUrl = process.env.BASE_URL ?? `http://localhost:${process.env.PORT }`
+  const baseUrl = process.env.BASE_URL ?? `http://localhost:${process.env.PORT}`
   return `${baseUrl}/uploads/${filename}`
 }
 
@@ -48,4 +65,27 @@ export function deleteFile(filename: string): void {
   if (fs.existsSync(filepath)) {
     fs.unlinkSync(filepath)
   }
+}
+
+export async function uploadFileToCloud(
+  file: Express.Multer.File,
+  folder?: string
+): Promise<{ url: string; publicId: string }> {
+  if (!file.buffer) {
+    throw new Error('No file buffer available. Memory storage is required for Cloudinary.')
+  }
+  
+  const result = await uploadToCloudinary(file.buffer, {
+    folder: folder ?? 'beatific',
+    resourceType: 'auto',
+  })
+  
+  return {
+    url: result.secureUrl,
+    publicId: result.publicId,
+  }
+}
+
+export async function deleteFileFromCloud(publicId: string): Promise<boolean> {
+  return deleteFromCloudinary(publicId)
 }

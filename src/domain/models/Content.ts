@@ -1,5 +1,5 @@
 import { Schema, model } from 'mongoose'
-import { ITemplate } from '../interfaces/ITemplate'
+import { IContent } from '../interfaces/IContent'
 
 const ElementSchema = new Schema(
   {
@@ -52,19 +52,25 @@ const PageSchema = new Schema(
   { _id: false }
 )
 
-const TemplateSchema = new Schema<ITemplate>(
+const ContentSchema = new Schema<IContent>(
   {
     name:          { type: String, required: true, trim: true },
     description:   { type: String, trim: true },
+    itemType:      { type: String, required: true, trim: true, lowercase: true }, 
     category:      { type: String, trim: true },
     subcategory:   { type: String, trim: true },
     tags:          { type: [String], default: [] },
     pages:         { type: [PageSchema], default: [] },
+    svgContent:    String,
     coverImageUrl: String,
     createdBy:     String,
-    isPublished:   { type: Boolean, default: true },
+    isPublished:   { type: Boolean, default: false },
   },
   { timestamps: true }
 )
 
-export const Template = model<ITemplate>('Template', TemplateSchema)
+ContentSchema.index({ itemType: 1, category: 1, isPublished: 1 })
+ContentSchema.index({ itemType: 1, isPublished: 1 })
+ContentSchema.index({ name: 'text', description: 'text' })
+
+export const Content = model<IContent>('Content', ContentSchema)

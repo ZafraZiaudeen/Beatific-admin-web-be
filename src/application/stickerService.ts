@@ -6,6 +6,7 @@ export interface CreateStickerDto {
   name: string
   description?: string
   category?: string
+  subcategory?: string
   tags?: string[]
   pages: IPage[]
   svgContent?: string
@@ -17,6 +18,7 @@ export interface UpdateStickerDto {
   name?: string
   description?: string
   category?: string
+  subcategory?: string
   tags?: string[]
   pages?: IPage[]
   svgContent?: string
@@ -26,6 +28,7 @@ export interface UpdateStickerDto {
 
 export interface ListStickersQuery {
   category?: string
+  subcategory?: string
   tags?: string
   isPublished?: string
   page?: string
@@ -48,6 +51,8 @@ export class StickerService {
     const filter: Record<string, unknown> = {}
 
     if (query.category) filter.category = query.category
+
+    if (query.subcategory) filter.subcategory = query.subcategory
 
     if (query.tags) {
       filter.tags = { $in: query.tags.split(',').map(t => t.trim()) }

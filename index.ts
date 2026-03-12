@@ -1,10 +1,13 @@
 import 'dotenv/config'
+
+
 import express from 'express'
 import cors from 'cors'
 import path from 'path'
 
 import { connectDatabase, disconnectDatabase } from './src/infrastructure/database/connection'
 import apiRouter from './src/api/index'
+import { USE_CLOUDINARY } from './src/infrastructure/storage/upload'
 
 const app = express()
 
@@ -21,7 +24,12 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads')
 app.use('/uploads', express.static(UPLOAD_DIR))
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() })
+  res.json({ 
+    status: 'ok', 
+    time: new Date().toISOString(),
+    storage: USE_CLOUDINARY ? 'cloudinary' : 'local',
+    cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME ?? null
+  })
 })
 
 

@@ -6,15 +6,6 @@ import { requireAuth } from '../middleware/authMiddleware'
 const router       = Router()
 const templateSvc  = new TemplateService()
 
-router.use(requireAuth)
-
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const template = await templateSvc.create(req.body)
-    res.status(201).json({ success: true, data: template })
-  } catch (err) { next(err) }
-})
-
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await templateSvc.list(req.query as Record<string, string>)
@@ -30,7 +21,14 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err) }
 })
 
-router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const template = await templateSvc.create(req.body)
+    res.status(201).json({ success: true, data: template })
+  } catch (err) { next(err) }
+})
+
+router.patch('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const template = await templateSvc.update(req.params.id, req.body)
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' })
@@ -38,7 +36,7 @@ router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => 
   } catch (err) { next(err) }
 })
 
-router.put('/:id/pages', async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id/pages', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { pages } = req.body
     if (!Array.isArray(pages)) {
@@ -50,7 +48,7 @@ router.put('/:id/pages', async (req: Request, res: Response, next: NextFunction)
   } catch (err) { next(err) }
 })
 
-router.post('/:id/pages', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:id/pages', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const template = await templateSvc.addPage(req.params.id, req.body)
     if (!template) return res.status(404).json({ success: false, message: 'Template not found' })
@@ -58,7 +56,7 @@ router.post('/:id/pages', async (req: Request, res: Response, next: NextFunction
   } catch (err) { next(err) }
 })
 
-router.patch('/:id/publish', async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/:id/publish', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { isPublished } = req.body
     const template = await templateSvc.publish(req.params.id, Boolean(isPublished))

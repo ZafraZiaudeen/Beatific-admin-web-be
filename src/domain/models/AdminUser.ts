@@ -5,6 +5,8 @@ export interface IAdminUser extends Document {
   email: string
   password: string
   role: 'super_admin' | 'admin' | 'editor'
+  isBanned: boolean
+  lastActiveAt?: Date
   createdAt: Date
   updatedAt: Date
 }
@@ -32,6 +34,13 @@ const adminUserSchema = new Schema<IAdminUser>(
       type: String,
       enum: ['super_admin', 'admin', 'editor'],
       default: 'admin',
+    },
+    isBanned: {
+      type: Boolean,
+      default: false,
+    },
+    lastActiveAt: {
+      type: Date,
     },
   },
   { timestamps: true }

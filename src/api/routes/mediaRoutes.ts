@@ -10,12 +10,12 @@ const mediaSvc = new MediaService()
 router.post(
   '/upload',
   upload.single('file'),
-  (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, message: 'No file uploaded' })
       }
-      const info = mediaSvc.processUpload(req, req.file)
+      const info = await mediaSvc.processUpload(req, req.file)
       res.status(201).json({ success: true, data: info })
     } catch (err) { next(err) }
   }
@@ -24,13 +24,13 @@ router.post(
 router.post(
   '/upload-multiple',
   upload.array('files', 10),
-  (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     try {
       const files = req.files as Express.Multer.File[]
       if (!files?.length) {
         return res.status(400).json({ success: false, message: 'No files uploaded' })
       }
-      const infos = mediaSvc.processMultipleUploads(req, files)
+      const infos = await mediaSvc.processMultipleUploads(req, files)
       res.status(201).json({ success: true, data: infos })
     } catch (err) { next(err) }
   }
@@ -48,11 +48,10 @@ router.get('/', (req: Request, res: Response, next: NextFunction) => {
   } catch (err) { next(err) }
 })
 
-router.delete('/:filename', (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:filename', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Sanitize: no path traversal
     const filename = path.basename(req.params.filename)
-    mediaSvc.deleteMedia(filename)
+    await mediaSvc.deleteMedia(filename)
     res.json({ success: true, message: 'File deleted' })
   } catch (err) { next(err) }
 })

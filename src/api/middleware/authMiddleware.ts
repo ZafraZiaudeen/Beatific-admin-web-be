@@ -30,3 +30,23 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     res.status(401).json({ success: false, message: 'Token is invalid or expired' })
   }
 }
+
+export function requireSuperAdmin(req: Request, res: Response, next: NextFunction): void {
+  requireAuth(req, res, () => {
+    if (req.admin?.role !== 'super_admin') {
+      res.status(403).json({ success: false, message: 'Super-admin access required' })
+      return
+    }
+    next()
+  })
+}
+
+export function requireAdminOrAbove(req: Request, res: Response, next: NextFunction): void {
+  requireAuth(req, res, () => {
+    if (!['super_admin', 'admin'].includes(req.admin?.role ?? '')) {
+      res.status(403).json({ success: false, message: 'Admin access required' })
+      return
+    }
+    next()
+  })
+}
