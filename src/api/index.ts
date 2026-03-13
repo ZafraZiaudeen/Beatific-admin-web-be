@@ -9,6 +9,7 @@ import categoryRoutes      from './routes/categoryRoutes'
 import mainCategoryRoutes  from './routes/mainCategoryRoutes'
 import permissionRoutes    from './routes/permissionRoutes'
 import userRoutes          from './routes/userRoutes'
+import settingsRoutes      from './routes/settingsRoutes'
 
 const apiRouter = Router()
 
@@ -21,7 +22,8 @@ apiRouter.use('/pdf',             pdfRoutes)
 apiRouter.use('/main-categories', mainCategoryRoutes) 
 apiRouter.use('/categories',      categoryRoutes)      
 apiRouter.use('/permissions',     permissionRoutes)    
-apiRouter.use('/users',           userRoutes)         
+apiRouter.use('/users',           userRoutes)
+apiRouter.use('/settings',        settingsRoutes)
 
 apiRouter.get('/health', (_req, res) => {
   res.json({ status: 'ok', api: 'v1', time: new Date().toISOString() })

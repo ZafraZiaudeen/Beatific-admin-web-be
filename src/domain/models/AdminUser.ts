@@ -6,6 +6,10 @@ export interface IAdminUser extends Document {
   password: string
   role: 'super_admin' | 'admin' | 'editor'
   isBanned: boolean
+  bio?: string
+  avatar?: string
+  failedLoginAttempts: number
+  lockedUntil?: Date
   lastActiveAt?: Date
   createdAt: Date
   updatedAt: Date
@@ -38,6 +42,21 @@ const adminUserSchema = new Schema<IAdminUser>(
     isBanned: {
       type: Boolean,
       default: false,
+    },
+    bio: {
+      type: String,
+      default: '',
+    },
+    avatar: {
+      type: String,
+      default: '',
+    },
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+    },
+    lockedUntil: {
+      type: Date,
     },
     lastActiveAt: {
       type: Date,

@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { AdminUser } from '../domain/models/AdminUser'
 import { AppUser } from '../domain/models/AppUser'
+import { settingsService } from './settingsService'
 
 export type AdminRole = 'super_admin' | 'admin' | 'editor'
 
@@ -25,6 +26,16 @@ export interface CreateAppUserParams {
 
 const PAGE_SIZE = 20
 
+function assertStrongPasswordIfRequired(password: string, requireStrong: boolean) {
+  if (!requireStrong) return
+  const hasUpper  = /[A-Z]/.test(password)
+  const hasNumber = /\d/.test(password)
+  const hasSymbol = /[^a-zA-Z0-9]/.test(password)
+  if (!hasUpper || !hasNumber || !hasSymbol || password.length < 6) {
+    throw Object.assign(new Error('Password must include uppercase letters, numbers, and special characters'), { statusCode: 400 })
+  }
+}
+
 export const adminUserService = {
 
   async list({ page = 1, limit = PAGE_SIZE, search = '' }: UserListParams) {
@@ -48,6 +59,8 @@ export const adminUserService = {
     if (existing) throw Object.assign(new Error('An admin with this email already exists'), { statusCode: 409 })
 
     if (password.length < 6) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 })
+    const settings = await settingsService.get()
+    assertStrongPasswordIfRequired(password, Boolean(settings.requireStrongPassword))
 
     const hashed = await bcrypt.hash(password, 10)
     const user = await AdminUser.create({ name, email, password: hashed, role })
@@ -76,6 +89,8 @@ export const adminUserService = {
 
   async resetPassword(id: string, newPassword: string) {
     if (newPassword.length < 6) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 })
+    const settings = await settingsService.get()
+    assertStrongPasswordIfRequired(newPassword, Boolean(settings.requireStrongPassword))
     const hashed = await bcrypt.hash(newPassword, 10)
     const user = await AdminUser.findByIdAndUpdate(id, { password: hashed }, { new: true }).select('-password')
     if (!user) throw Object.assign(new Error('Admin user not found'), { statusCode: 404 })
@@ -120,6 +135,8 @@ export const appUserService = {
     if (existing) throw Object.assign(new Error('A user with this email already exists'), { statusCode: 409 })
 
     if (password.length < 6) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 })
+    const settings = await settingsService.get()
+    assertStrongPasswordIfRequired(password, Boolean(settings.requireStrongPassword))
 
     const hashed = await bcrypt.hash(password, 10)
     const user = await AppUser.create({ name, email, password: hashed })
@@ -138,6 +155,8 @@ export const appUserService = {
 
   async resetPassword(id: string, newPassword: string) {
     if (newPassword.length < 6) throw Object.assign(new Error('Password must be at least 6 characters'), { statusCode: 400 })
+    const settings = await settingsService.get()
+    assertStrongPasswordIfRequired(newPassword, Boolean(settings.requireStrongPassword))
     const hashed = await bcrypt.hash(newPassword, 10)
     const user = await AppUser.findByIdAndUpdate(id, { password: hashed }, { new: true }).select('-password')
     if (!user) throw Object.assign(new Error('App user not found'), { statusCode: 404 })

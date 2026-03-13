@@ -14,6 +14,7 @@ export interface AuthPayload {
   email: string
   name: string
   role: string
+  sg?: number
 }
 
 export interface AuthResponse {

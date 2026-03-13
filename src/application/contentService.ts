@@ -1,5 +1,7 @@
 import { Content } from '../domain/models/Content'
 import { IContent } from '../domain/interfaces/IContent'
+import { emailService } from '../infrastructure/email/emailService'
+import { settingsService } from './settingsService'
 
 export interface CreateContentDto {
   name: string
@@ -81,11 +83,24 @@ export class ContentService {
   }
 
   async publish(id: string, isPublished: boolean): Promise<IContent | null> {
-    return Content.findByIdAndUpdate(
+    const content = await Content.findByIdAndUpdate(
       id,
       { $set: { isPublished } },
       { new: true }
     )
+
+    if (content && isPublished) {
+      const settings = await settingsService.get()
+      if (settings.enableEmailNotifications && settings.notifyOnContentPublish) {
+        emailService.send({
+          to: settings.supportEmail || undefined,
+          subject: `[Beatific Admin] Content Published: ${content.name}`,
+          text: `New content was just published to the app.\n\nName: ${content.name}\nType: ${content.itemType}\nCategory: ${content.category || 'N/A'}\nTime: ${new Date().toISOString()}`,
+        }).catch((err: any) => console.warn('[Email] Failed to send publish notification:', err.message))
+      }
+    }
+
+    return content
   }
 
   async delete(id: string): Promise<boolean> {
