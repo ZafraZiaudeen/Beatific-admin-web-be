@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { adminUserService, appUserService } from '../../application/userService'
-import { requireAuth, requireSuperAdmin, requireAdminOrAbove } from '../middleware/authMiddleware'
+import { requireAuth, requireAdminOrAbove } from '../middleware/authMiddleware'
 
 const router = Router()
 
@@ -16,7 +16,7 @@ router.get('/admin', requireAuth, async (req: Request, res: Response, next: Next
   } catch (err) { next(err) }
 })
 
-router.post('/admin', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.post('/admin', requireAdminOrAbove, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { name, email, password, role } = req.body
     if (!name || !email || !password) {
@@ -28,7 +28,7 @@ router.post('/admin', requireSuperAdmin, async (req: Request, res: Response, nex
   } catch (err) { next(err) }
 })
 
-router.patch('/admin/:id/role', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/admin/:id/role', requireAdminOrAbove, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { role } = req.body
     if (!['super_admin', 'admin', 'editor'].includes(role)) {
@@ -40,14 +40,14 @@ router.patch('/admin/:id/role', requireSuperAdmin, async (req: Request, res: Res
   } catch (err) { next(err) }
 })
 
-router.patch('/admin/:id/ban', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/admin/:id/ban', requireAdminOrAbove, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const user = await adminUserService.toggleBan(req.params.id)
     res.json({ success: true, data: user })
   } catch (err) { next(err) }
 })
 
-router.patch('/admin/:id/password', requireSuperAdmin, async (req: Request, res: Response, next: NextFunction) => {
+router.patch('/admin/:id/password', requireAdminOrAbove, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { newPassword } = req.body
     if (!newPassword) {

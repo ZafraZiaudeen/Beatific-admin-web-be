@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import type { AuthPayload } from '../../domain/interfaces/IAuth'
+import { settingsService } from '../../application/settingsService'
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'beatific-admin-secret-key-change-in-production'
 
@@ -24,8 +25,21 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as AuthPayload
-    req.admin = decoded
-    next()
+    void (async () => {
+      try {
+        const settings = await settingsService.get()
+        const expected = settings.sessionGeneration ?? 0
+        const got = decoded.sg ?? 0
+        if (got !== expected) {
+          res.status(401).json({ success: false, message: 'Token is invalid or expired' })
+          return
+        }
+        req.admin = decoded
+        next()
+      } catch {
+        res.status(401).json({ success: false, message: 'Token is invalid or expired' })
+      }
+    })()
   } catch {
     res.status(401).json({ success: false, message: 'Token is invalid or expired' })
   }
