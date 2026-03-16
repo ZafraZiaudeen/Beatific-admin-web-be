@@ -72,7 +72,7 @@ export const adminUserService = {
     const user = await AdminUser.findByIdAndUpdate(
       id,
       { role },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     ).select('-password')
     if (!user) throw Object.assign(new Error('Admin user not found'), { statusCode: 404 })
     return user
@@ -92,7 +92,7 @@ export const adminUserService = {
     const settings = await settingsService.get()
     assertStrongPasswordIfRequired(newPassword, Boolean(settings.requireStrongPassword))
     const hashed = await bcrypt.hash(newPassword, 10)
-    const user = await AdminUser.findByIdAndUpdate(id, { password: hashed }, { new: true }).select('-password')
+    const user = await AdminUser.findByIdAndUpdate(id, { password: hashed }, { returnDocument: 'after' }).select('-password')
     if (!user) throw Object.assign(new Error('Admin user not found'), { statusCode: 404 })
     return { message: 'Password reset successfully' }
   },
@@ -158,7 +158,7 @@ export const appUserService = {
     const settings = await settingsService.get()
     assertStrongPasswordIfRequired(newPassword, Boolean(settings.requireStrongPassword))
     const hashed = await bcrypt.hash(newPassword, 10)
-    const user = await AppUser.findByIdAndUpdate(id, { password: hashed }, { new: true }).select('-password')
+    const user = await AppUser.findByIdAndUpdate(id, { password: hashed }, { returnDocument: 'after' }).select('-password')
     if (!user) throw Object.assign(new Error('App user not found'), { statusCode: 404 })
     return { message: 'Password reset successfully' }
   },
