@@ -86,7 +86,7 @@ export class StickerService {
   }
 
   async update(id: string, dto: UpdateStickerDto): Promise<ISticker | null> {
-    return Sticker.findByIdAndUpdate(id, { $set: dto }, { new: true, runValidators: true })
+    return Sticker.findByIdAndUpdate(id, { $set: dto }, { returnDocument: 'after', runValidators: true })
   }
 
   async delete(id: string): Promise<boolean> {
@@ -97,10 +97,10 @@ export class StickerService {
   async savePages(id: string, pages: IPage[], svgContent?: string): Promise<ISticker | null> {
     const update: Record<string, unknown> = { pages }
     if (svgContent !== undefined) update.svgContent = svgContent
-    return Sticker.findByIdAndUpdate(id, { $set: update }, { new: true })
+    return Sticker.findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })
   }
 
   async publish(id: string, isPublished: boolean): Promise<ISticker | null> {
-    return Sticker.findByIdAndUpdate(id, { $set: { isPublished } }, { new: true })
+    return Sticker.findByIdAndUpdate(id, { $set: { isPublished } }, { returnDocument: 'after' })
   }
 }

@@ -44,7 +44,7 @@ export class MainCategoryService {
   async update(id: string, dto: UpdateMainCategoryDto): Promise<IMainCategory | null> {
     const update: Record<string, unknown> = { ...dto }
     if (dto.name && !dto.slug) update.slug = toSlug(dto.name)
-    return MainCategory.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
+    return MainCategory.findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after', runValidators: true })
   }
 
   async delete(id: string): Promise<boolean> {

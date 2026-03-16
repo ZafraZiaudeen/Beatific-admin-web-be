@@ -14,7 +14,7 @@ export class PermissionService {
     const result = await Permission.findOneAndUpdate(
       { scope, targetType },
       { $set: { ...data, scope, targetType } },
-      { new: true, upsert: true, runValidators: true }
+      { returnDocument: 'after', upsert: true, runValidators: true }
     )
     return result as IPermission
   }
@@ -32,7 +32,7 @@ export class PermissionService {
       const result = await Permission.findOneAndUpdate(
         { scope: perm.scope, targetType: perm.targetType },
         { $set: perm },
-        { new: true, upsert: true, runValidators: true }
+        { returnDocument: 'after', upsert: true, runValidators: true }
       )
       results.push(result as IPermission)
     }

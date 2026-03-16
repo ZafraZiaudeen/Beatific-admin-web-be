@@ -67,7 +67,7 @@ export class ContentService {
     return Content.findByIdAndUpdate(
       id,
       { $set: dto },
-      { new: true, runValidators: true }
+      { returnDocument: 'after', runValidators: true }
     )
   }
 
@@ -78,7 +78,7 @@ export class ContentService {
     return Content.findByIdAndUpdate(
       id,
       { $set: update },
-      { new: true }
+      { returnDocument: 'after' }
     )
   }
 
@@ -86,7 +86,7 @@ export class ContentService {
     const content = await Content.findByIdAndUpdate(
       id,
       { $set: { isPublished } },
-      { new: true }
+      { returnDocument: 'after' }
     )
 
     if (content && isPublished) {

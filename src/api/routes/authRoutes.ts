@@ -79,7 +79,7 @@ authRouter.put('/profile', requireAuth, async (req: Request, res: Response) => {
       }
       updates.email = email.toLowerCase().trim()
     }
-    const user = await AdminUser.findByIdAndUpdate(userId, updates, { new: true }).select('-password')
+    const user = await AdminUser.findByIdAndUpdate(userId, updates, { returnDocument: 'after' }).select('-password')
     if (!user) {
       res.status(404).json({ success: false, message: 'User not found' })
       return

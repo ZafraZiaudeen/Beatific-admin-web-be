@@ -85,7 +85,7 @@ export class TemplateService {
   }
 
   async update(id: string, dto: UpdateTemplateDto): Promise<ITemplate | null> {
-    return Template.findByIdAndUpdate(id, { $set: dto }, { new: true, runValidators: true })
+    return Template.findByIdAndUpdate(id, { $set: dto }, { returnDocument: 'after', runValidators: true })
   }
 
   async delete(id: string): Promise<boolean> {
@@ -94,14 +94,14 @@ export class TemplateService {
   }
 
   async savePages(id: string, pages: IPage[]): Promise<ITemplate | null> {
-    return Template.findByIdAndUpdate(id, { $set: { pages } }, { new: true })
+    return Template.findByIdAndUpdate(id, { $set: { pages } }, { returnDocument: 'after' })
   }
 
   async addPage(id: string, page: IPage): Promise<ITemplate | null> {
-    return Template.findByIdAndUpdate(id, { $push: { pages: page } }, { new: true })
+    return Template.findByIdAndUpdate(id, { $push: { pages: page } }, { returnDocument: 'after' })
   }
 
   async publish(id: string, isPublished: boolean): Promise<ITemplate | null> {
-    return Template.findByIdAndUpdate(id, { $set: { isPublished } }, { new: true })
+    return Template.findByIdAndUpdate(id, { $set: { isPublished } }, { returnDocument: 'after' })
   }
 }

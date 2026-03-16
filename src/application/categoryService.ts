@@ -55,7 +55,7 @@ export class CategoryService {
         slug: s.slug ?? toSlug(s.name),
       }))
     }
-    return Category.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
+    return Category.findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after', runValidators: true })
   }
 
   async addSubcategory(id: string, sub: { name: string; slug?: string }): Promise<ICategory | null> {
@@ -63,7 +63,7 @@ export class CategoryService {
     return Category.findByIdAndUpdate(
       id,
       { $push: { subcategories: subcategory } },
-      { new: true }
+      { returnDocument: 'after' }
     )
   }
 
@@ -71,7 +71,7 @@ export class CategoryService {
     return Category.findByIdAndUpdate(
       id,
       { $pull: { subcategories: { slug } } },
-      { new: true }
+      { returnDocument: 'after' }
     )
   }
 
