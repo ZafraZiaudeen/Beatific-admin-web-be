@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { Request, Response } from 'express'
 import bcrypt from 'bcryptjs'
 import { authService } from '../../application/authService'
+import { verificationService } from '../../application/verificationService'
 import { AdminUser } from '../../domain/models/AdminUser'
 import { settingsService } from '../../application/settingsService'
 import { requireAuth } from '../middleware/authMiddleware'
@@ -133,5 +134,65 @@ const handleChangePassword = async (req: Request, res: Response) => {
 /** PUT|POST /auth/change-password — change own password */
 authRouter.put('/change-password', requireAuth, handleChangePassword)
 authRouter.post('/change-password', requireAuth, handleChangePassword)
+
+// ─── Forgot Password: Step 1 — send reset code ────────────
+authRouter.post('/forgot-password', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Email is required' })
+      return
+    }
+    const data = await verificationService.sendForgotPasswordCode(email.trim().toLowerCase())
+    res.json({ success: true, data })
+  } catch (err: any) {
+    res.status(err.statusCode ?? 500).json({ success: false, message: err.message ?? 'Failed to send reset code' })
+  }
+})
+
+// ─── Forgot Password: Step 2 — verify code ────────────────
+authRouter.post('/verify-reset-code', async (req: Request, res: Response) => {
+  try {
+    const { email, code } = req.body
+    if (!email || !code) {
+      res.status(400).json({ success: false, message: 'Email and code are required' })
+      return
+    }
+    const data = await verificationService.verifyForgotPasswordCode(email.trim().toLowerCase(), code.trim())
+    res.json({ success: true, data })
+  } catch (err: any) {
+    res.status(err.statusCode ?? 500).json({ success: false, message: err.message ?? 'Failed to verify code' })
+  }
+})
+
+// ─── Forgot Password: Step 3 — set new password ───────────
+authRouter.post('/reset-password', async (req: Request, res: Response) => {
+  try {
+    const { resetToken, newPassword } = req.body
+    if (!resetToken || !newPassword) {
+      res.status(400).json({ success: false, message: 'Reset token and new password are required' })
+      return
+    }
+    const data = await verificationService.resetPassword(resetToken, newPassword)
+    res.json({ success: true, data })
+  } catch (err: any) {
+    res.status(err.statusCode ?? 500).json({ success: false, message: err.message ?? 'Failed to reset password' })
+  }
+})
+
+// ─── Forgot Password: Resend code ─────────────────────────
+authRouter.post('/resend-reset-code', async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body
+    if (!email) {
+      res.status(400).json({ success: false, message: 'Email is required' })
+      return
+    }
+    const data = await verificationService.resendCode(email.trim().toLowerCase())
+    res.json({ success: true, data })
+  } catch (err: any) {
+    res.status(err.statusCode ?? 500).json({ success: false, message: err.message ?? 'Failed to resend code' })
+  }
+})
 
 export default authRouter
