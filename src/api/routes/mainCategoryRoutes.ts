@@ -40,7 +40,7 @@ router.delete('/:id', requireAuth, async (req: Request, res: Response, next: Nex
   try {
     const deleted = await mainCatService.delete(req.params.id)
     if (!deleted) return res.status(404).json({ success: false, message: 'Main category not found' })
-    res.json({ success: true, message: 'Main category and all its subcategories deleted' })
+    res.json({ success: true, message: 'Main category, its categories, and related content deleted' })
   } catch (err) { next(err) }
 })
 

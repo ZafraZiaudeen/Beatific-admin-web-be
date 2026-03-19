@@ -65,11 +65,39 @@ router.patch('/:id/publish', requireAuth, async (req: Request, res: Response, ne
   } catch (err) { next(err) }
 })
 
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const deleted = await templateSvc.delete(req.params.id)
-    if (!deleted) return res.status(404).json({ success: false, message: 'Template not found' })
-    res.json({ success: true, message: 'Template deleted' })
+    const deletedBy = (req as any).admin?.id ?? undefined
+    const preserveRaw = (req.query.preserveForUsers ?? (req as any).body?.preserveForUsers) as
+      | string
+      | boolean
+      | undefined
+    const preserveForUsers =
+      preserveRaw === undefined ? true : (String(preserveRaw).toLowerCase() === 'true')
+
+    const result = await templateSvc.delete(req.params.id, deletedBy, preserveForUsers)
+    if (!result.deleted) {
+      return res.status(404).json({ success: false, message: 'Template not found' })
+    }
+
+    let message = 'Template permanently deleted.'
+    if (result.snapshotCreated) {
+      message = `Template permanently deleted. A snapshot was preserved for ${result.journalRefCount} existing journal reference(s).`
+    } else if (!result.preserveForUsers && result.journalsRemoved > 0) {
+      message = `Template permanently deleted. Removed ${result.journalsRemoved} journal reference(s).`
+    }
+
+    res.json({
+      success: true,
+      message,
+      data: {
+        templateId: result.templateId,
+        snapshotCreated: result.snapshotCreated,
+        journalRefCount: result.journalRefCount,
+        journalsRemoved: result.journalsRemoved,
+        preserveForUsers: result.preserveForUsers,
+      },
+    })
   } catch (err) { next(err) }
 })
 

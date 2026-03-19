@@ -25,6 +25,7 @@ export interface IElement {
   lineCap?: string
   lineJoin?: string
   numPoints?: number
+  numSides?: number
   innerRadius?: number
   outerRadius?: number
   data?: string

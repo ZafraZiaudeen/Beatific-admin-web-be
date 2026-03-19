@@ -1,5 +1,7 @@
 import { MainCategory } from '../domain/models/MainCategory'
 import { Category } from '../domain/models/Category'
+import { Content } from '../domain/models/Content'
+import { Permission } from '../domain/models/Permission'
 import { IMainCategory } from '../domain/interfaces/IMainCategory'
 
 function toSlug(name: string): string {
@@ -51,7 +53,12 @@ export class MainCategoryService {
     const mainCat = await MainCategory.findById(id)
     if (!mainCat) return false
 
+
     await Category.deleteMany({ itemType: mainCat.slug })
+
+    await Permission.deleteMany({ targetType: mainCat.slug })
+
+    await Content.deleteMany({ itemType: mainCat.slug })
 
     await MainCategory.findByIdAndDelete(id)
     return true

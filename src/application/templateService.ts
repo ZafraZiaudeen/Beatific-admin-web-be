@@ -1,4 +1,6 @@
+import mongoose from 'mongoose'
 import { Template } from '../domain/models/Template'
+import { DeletedTemplateSnapshot } from '../domain/models/DeletedTemplateSnapshot'
 import { ITemplate } from '../domain/interfaces/ITemplate'
 import { IPage } from '../domain/interfaces/IPage'
 
@@ -33,6 +35,15 @@ export interface ListTemplatesQuery {
   page?: string
   limit?: string
   search?: string
+}
+
+export interface AdminDeleteResult {
+  deleted: boolean
+  templateId: string
+  snapshotCreated: boolean
+  journalRefCount: number
+  journalsRemoved: number
+  preserveForUsers: boolean
 }
 
 export class TemplateService {
@@ -88,10 +99,80 @@ export class TemplateService {
     return Template.findByIdAndUpdate(id, { $set: dto }, { returnDocument: 'after', runValidators: true })
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await Template.findByIdAndDelete(id)
-    return result !== null
-  }
+
+    async delete(id: string, deletedBy?: string, preserveForUsers = true): Promise<AdminDeleteResult> {
+      const template = await Template.findById(id).lean()
+      if (!template) {
+        return {
+          deleted: false,
+          templateId: id,
+          snapshotCreated: false,
+          journalRefCount: 0,
+          journalsRemoved: 0,
+          preserveForUsers,
+        }
+      }
+
+      const journalsCollection = mongoose.connection.collection('journals')
+      const journalRefCount = await journalsCollection.countDocuments({ templateId: id })
+
+      const session = await mongoose.startSession().catch(() => null)
+
+      try {
+        if (session) {
+          session.startTransaction()
+        }
+
+        const sessionOpts = session ? { session } : {}
+
+        let snapshotCreated = false
+        let journalsRemoved = 0
+        if (preserveForUsers && journalRefCount > 0) {
+          await DeletedTemplateSnapshot.findOneAndUpdate(
+            { sourceTemplateId: id },
+            {
+              $setOnInsert: {
+                sourceTemplateId: id,
+                snapshot: template,
+                deletedAt: new Date(),
+                deletedBy: deletedBy ?? null,
+                journalRefCount,
+              },
+            },
+            { upsert: true, ...sessionOpts },
+          )
+          snapshotCreated = true
+        } else if (!preserveForUsers) {
+          await DeletedTemplateSnapshot.deleteMany({ sourceTemplateId: id }, sessionOpts)
+          const removed = await journalsCollection.deleteMany({ templateId: id }, sessionOpts)
+          journalsRemoved = removed?.deletedCount ?? 0
+        }
+
+        await Template.deleteOne({ _id: id }, sessionOpts)
+
+        if (session) {
+          await session.commitTransaction()
+        }
+
+        return {
+          deleted: true,
+          templateId: id,
+          snapshotCreated,
+          journalRefCount,
+          journalsRemoved,
+          preserveForUsers,
+        }
+      } catch (err) {
+        if (session) {
+          await session.abortTransaction()
+        }
+        throw err
+      } finally {
+        if (session) {
+          session.endSession()
+        }
+      }
+    }
 
   async savePages(id: string, pages: IPage[]): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $set: { pages } }, { returnDocument: 'after' })
