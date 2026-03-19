@@ -1,4 +1,6 @@
+import mongoose from 'mongoose'
 import { Content } from '../domain/models/Content'
+import { DeletedContentSnapshot } from '../domain/models/DeletedContentSnapshot'
 import { IContent } from '../domain/interfaces/IContent'
 import { emailService } from '../infrastructure/email/emailService'
 import { settingsService } from './settingsService'
@@ -25,6 +27,15 @@ export interface UpdateContentDto {
   tags?: string[]
   coverImageUrl?: string
   isPublished?: boolean
+}
+
+export interface AdminDeleteResult {
+  deleted: boolean
+  contentId: string
+  snapshotCreated: boolean
+  journalRefCount: number
+  journalsRemoved: number
+  preserveForUsers: boolean
 }
 
 export class ContentService {
@@ -103,9 +114,79 @@ export class ContentService {
     return content
   }
 
-  async delete(id: string): Promise<boolean> {
-    const result = await Content.findByIdAndDelete(id)
-    return !!result
+  async delete(id: string, deletedBy?: string, preserveForUsers = true): Promise<AdminDeleteResult> {
+    const content = await Content.findById(id).lean()
+    if (!content) {
+      return {
+        deleted: false,
+        contentId: id,
+        snapshotCreated: false,
+        journalRefCount: 0,
+        journalsRemoved: 0,
+        preserveForUsers,
+      }
+    }
+
+  
+    const journalsCollection = mongoose.connection.collection('journals')
+    const journalRefCount = await journalsCollection.countDocuments({ templateId: id })
+
+    const session = await mongoose.startSession().catch(() => null)
+
+    try {
+      if (session) {
+        session.startTransaction()
+      }
+
+      const sessionOpts = session ? { session } : {}
+
+      let snapshotCreated = false
+      let journalsRemoved = 0
+      if (preserveForUsers && journalRefCount > 0) {
+        await DeletedContentSnapshot.findOneAndUpdate(
+          { sourceContentId: id },
+          {
+            $setOnInsert: {
+              sourceContentId: id,
+              snapshot: content,
+              deletedAt: new Date(),
+              deletedBy: deletedBy ?? null,
+              journalRefCount,
+            },
+          },
+          { upsert: true, ...sessionOpts },
+        )
+        snapshotCreated = true
+      } else if (!preserveForUsers) {
+        await DeletedContentSnapshot.deleteMany({ sourceContentId: id }, sessionOpts)
+        const removed = await journalsCollection.deleteMany({ templateId: id }, sessionOpts)
+        journalsRemoved = removed?.deletedCount ?? 0
+      }
+
+      await Content.deleteOne({ _id: id }, sessionOpts)
+
+      if (session) {
+        await session.commitTransaction()
+      }
+
+      return {
+        deleted: true,
+        contentId: id,
+        snapshotCreated,
+        journalRefCount,
+        journalsRemoved,
+        preserveForUsers,
+      }
+    } catch (err) {
+      if (session) {
+        await session.abortTransaction()
+      }
+      throw err
+    } finally {
+      if (session) {
+        session.endSession()
+      }
+    }
   }
 
   async getStats(): Promise<{

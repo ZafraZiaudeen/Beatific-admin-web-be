@@ -1,6 +1,6 @@
 export interface IElement {
   id: string
-  type: 'rect' | 'circle' | 'text' | 'image' | 'line' | 'arrow' | 'star' | 'triangle' | 'path'
+  type: 'rect' | 'circle' | 'text' | 'image' | 'line' | 'arrow' | 'star' | 'triangle' | 'path' | 'polygon'
 
   x: number
   y: number
@@ -31,6 +31,7 @@ export interface IElement {
   lineJoin?: string
 
   numPoints?: number
+  numSides?: number
   innerRadius?: number
   outerRadius?: number
 

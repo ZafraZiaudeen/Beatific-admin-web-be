@@ -29,6 +29,7 @@ const ElementSchema = new Schema(
     lineCap:      String,
     lineJoin:     String,
     numPoints:    Number,
+    numSides:     Number,
     innerRadius:  Number,
     outerRadius:  Number,
     data:         String,
