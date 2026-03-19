@@ -75,35 +75,20 @@ router.patch('/:id/publish', requireAuth, async (req: Request, res: Response, ne
 
 router.delete('/:id', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const deletedBy = (req as any).admin?.id ?? undefined
-    const preserveRaw = (req.query.preserveForUsers ?? (req as any).body?.preserveForUsers) as
+    const preserveRaw = (req.query.preserveForUsers ?? req.body?.preserveForUsers ??
+      req.body?.keepForExistingJournals ?? req.body?.keepForExistingUsers ?? req.body?.preserveForExistingUsers) as
       | string
       | boolean
       | undefined
-    const preserveForUsers =
-      preserveRaw === undefined ? true : (String(preserveRaw).toLowerCase() === 'true')
+    const keepForExistingJournals =
+      preserveRaw === undefined ? true : String(preserveRaw).toLowerCase() === 'true'
 
-    const result = await contentService.delete(req.params.id, deletedBy, preserveForUsers)
-    if (!result.deleted) {
-      return res.status(404).json({ success: false, message: 'Content not found' })
-    }
-    let message = 'Content permanently deleted.'
-    if (result.snapshotCreated) {
-      message = `Content permanently deleted. A snapshot was preserved for ${result.journalRefCount} existing journal reference(s).`
-    } else if (!result.preserveForUsers && result.journalsRemoved > 0) {
-      message = `Content permanently deleted. Removed ${result.journalsRemoved} journal reference(s).`
-    }
-    res.json({
-      success: true,
-      message,
-      data: {
-        contentId: result.contentId,
-        snapshotCreated: result.snapshotCreated,
-        journalRefCount: result.journalRefCount,
-        journalsRemoved: result.journalsRemoved,
-        preserveForUsers: result.preserveForUsers,
-      },
+    const deleted = await contentService.delete(req.params.id, {
+      keepForExistingJournals,
+      deletedBy: req.admin?.id,
     })
+    if (!deleted) return res.status(404).json({ success: false, message: 'Content not found' })
+    res.json({ success: true, message: 'Content deleted' })
   } catch (err) { next(err) }
 })
 

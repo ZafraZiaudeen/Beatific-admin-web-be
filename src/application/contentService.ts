@@ -4,6 +4,7 @@ import { DeletedContentSnapshot } from '../domain/models/DeletedContentSnapshot'
 import { IContent } from '../domain/interfaces/IContent'
 import { emailService } from '../infrastructure/email/emailService'
 import { settingsService } from './settingsService'
+import { getAppConnection } from '../infrastructure/database/appConnection'
 
 export interface CreateContentDto {
   name: string
@@ -29,19 +30,111 @@ export interface UpdateContentDto {
   isPublished?: boolean
 }
 
-export interface AdminDeleteResult {
-  deleted: boolean
-  contentId: string
-  snapshotCreated: boolean
-  journalRefCount: number
-  journalsRemoved: number
-  preserveForUsers: boolean
+export interface DeleteContentOptions {
+  keepForExistingJournals?: boolean
+  deletedBy?: string
 }
 
 export class ContentService {
+  private async syncContentToAppDb(content: IContent | null): Promise<void> {
+    if (!content?._id) return
+    const appConn = await getAppConnection()
+    if (!appConn) return
+
+    try {
+      const AppContent =
+        appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
+
+      const payload: Partial<IContent> & { updatedAt?: Date } = {
+        name: content.name,
+        description: content.description,
+        itemType: content.itemType,
+        category: content.category,
+        subcategory: content.subcategory,
+        tags: content.tags ?? [],
+        pages: content.pages ?? [],
+        svgContent: content.svgContent,
+        coverImageUrl: content.coverImageUrl,
+        createdBy: content.createdBy,
+        isPublished: content.isPublished,
+      }
+
+      if (content.updatedAt) payload.updatedAt = content.updatedAt
+
+      const update: Record<string, unknown> = { $set: payload }
+      if (content.createdAt) {
+        update.$setOnInsert = { createdAt: content.createdAt }
+      }
+
+      await AppContent.findByIdAndUpdate(
+        content._id,
+        update,
+        { upsert: true, setDefaultsOnInsert: true }
+      )
+    } catch (err: any) {
+      console.warn('[app-db] Failed to sync content:', err?.message ?? err)
+    }
+  }
+
+  private async deleteContentFromAppDb(id: string): Promise<void> {
+    const appConn = await getAppConnection()
+    if (!appConn) return
+    try {
+      const AppContent =
+        appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
+      await AppContent.findByIdAndDelete(id)
+    } catch (err: any) {
+      console.warn('[app-db] Failed to delete content:', err?.message ?? err)
+    }
+  }
+
+  private async snapshotContentForJournals(content: IContent, deletedBy?: string): Promise<void> {
+    if (!content?._id) return
+    const appConn = await getAppConnection()
+    if (!appConn) return
+
+    try {
+      const journalRefCount = await appConn.collection('journals').countDocuments({ templateId: String(content._id) })
+
+      await appConn.collection('deletedcontentsnapshots').updateOne(
+        { sourceContentId: String(content._id) },
+        {
+          $set: {
+            sourceContentId: String(content._id),
+            snapshot: {
+              ...((content as any).toObject ? (content as any).toObject() : content),
+              _id: String(content._id),
+            },
+            deletedAt: new Date(),
+            deletedBy,
+            journalRefCount,
+          },
+        },
+        { upsert: true }
+      )
+    } catch (err: any) {
+      console.warn('[app-db] Failed to create deleted content snapshot:', err?.message ?? err)
+    }
+  }
+
+  private async purgeContentReferences(contentId: string): Promise<void> {
+    const appConn = await getAppConnection()
+    if (!appConn) return
+    try {
+      await Promise.all([
+        appConn.collection('deletedcontentsnapshots').deleteMany({ sourceContentId: contentId }),
+        appConn.collection('journals').deleteMany({ templateId: contentId }),
+      ])
+    } catch (err: any) {
+      console.warn('[app-db] Failed to purge content references:', err?.message ?? err)
+    }
+  }
+
   async create(dto: CreateContentDto): Promise<IContent> {
     const content = new Content(dto)
-    return content.save()
+    const saved = await content.save()
+    await this.syncContentToAppDb(saved)
+    return saved
   }
 
   async list(params: {
@@ -75,22 +168,26 @@ export class ContentService {
   }
 
   async update(id: string, dto: UpdateContentDto): Promise<IContent | null> {
-    return Content.findByIdAndUpdate(
+    const updated = await Content.findByIdAndUpdate(
       id,
       { $set: dto },
       { returnDocument: 'after', runValidators: true }
     )
+    await this.syncContentToAppDb(updated)
+    return updated
   }
 
   async savePages(id: string, pages: object[], svgContent?: string): Promise<IContent | null> {
     const update: Record<string, unknown> = { pages }
     if (svgContent !== undefined) update.svgContent = svgContent
     
-    return Content.findByIdAndUpdate(
+    const updated = await Content.findByIdAndUpdate(
       id,
       { $set: update },
       { returnDocument: 'after' }
     )
+    await this.syncContentToAppDb(updated)
+    return updated
   }
 
   async publish(id: string, isPublished: boolean): Promise<IContent | null> {
@@ -111,82 +208,23 @@ export class ContentService {
       }
     }
 
+    await this.syncContentToAppDb(content)
     return content
   }
 
-  async delete(id: string, deletedBy?: string, preserveForUsers = true): Promise<AdminDeleteResult> {
-    const content = await Content.findById(id).lean()
-    if (!content) {
-      return {
-        deleted: false,
-        contentId: id,
-        snapshotCreated: false,
-        journalRefCount: 0,
-        journalsRemoved: 0,
-        preserveForUsers,
-      }
+  async delete(id: string, options?: DeleteContentOptions): Promise<boolean> {
+    const existing = await Content.findById(id)
+    if (!existing) return false
+
+    if (options?.keepForExistingJournals) {
+      await this.snapshotContentForJournals(existing, options.deletedBy)
+    } else {
+      await this.purgeContentReferences(String(existing._id))
     }
 
-  
-    const journalsCollection = mongoose.connection.collection('journals')
-    const journalRefCount = await journalsCollection.countDocuments({ templateId: id })
-
-    const session = await mongoose.startSession().catch(() => null)
-
-    try {
-      if (session) {
-        session.startTransaction()
-      }
-
-      const sessionOpts = session ? { session } : {}
-
-      let snapshotCreated = false
-      let journalsRemoved = 0
-      if (preserveForUsers && journalRefCount > 0) {
-        await DeletedContentSnapshot.findOneAndUpdate(
-          { sourceContentId: id },
-          {
-            $setOnInsert: {
-              sourceContentId: id,
-              snapshot: content,
-              deletedAt: new Date(),
-              deletedBy: deletedBy ?? null,
-              journalRefCount,
-            },
-          },
-          { upsert: true, ...sessionOpts },
-        )
-        snapshotCreated = true
-      } else if (!preserveForUsers) {
-        await DeletedContentSnapshot.deleteMany({ sourceContentId: id }, sessionOpts)
-        const removed = await journalsCollection.deleteMany({ templateId: id }, sessionOpts)
-        journalsRemoved = removed?.deletedCount ?? 0
-      }
-
-      await Content.deleteOne({ _id: id }, sessionOpts)
-
-      if (session) {
-        await session.commitTransaction()
-      }
-
-      return {
-        deleted: true,
-        contentId: id,
-        snapshotCreated,
-        journalRefCount,
-        journalsRemoved,
-        preserveForUsers,
-      }
-    } catch (err) {
-      if (session) {
-        await session.abortTransaction()
-      }
-      throw err
-    } finally {
-      if (session) {
-        session.endSession()
-      }
-    }
+    const result = await Content.findByIdAndDelete(id)
+    if (result) await this.deleteContentFromAppDb(id)
+    return !!result
   }
 
   async getStats(): Promise<{
