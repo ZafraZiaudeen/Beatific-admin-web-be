@@ -9,8 +9,12 @@ export async function getAppConnection(): Promise<mongoose.Connection | null> {
 
   const uri = process.env.APP_MONGODB_URI
   if (!uri) {
-    console.warn('[app-db] APP_MONGODB_URI environment variable is not set.');
-    return null;
+    // Fall back to the primary connection when admin/app share a DB
+    if (mongoose.connection.readyState === 1) {
+      return mongoose.connection
+    }
+    console.warn('[app-db] APP_MONGODB_URI environment variable is not set.')
+    return null
   }
 
   try {

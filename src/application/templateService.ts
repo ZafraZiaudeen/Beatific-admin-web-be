@@ -3,6 +3,7 @@ import { Template } from '../domain/models/Template'
 import { DeletedTemplateSnapshot } from '../domain/models/DeletedTemplateSnapshot'
 import { ITemplate } from '../domain/interfaces/ITemplate'
 import { IPage } from '../domain/interfaces/IPage'
+import { getAppConnection } from '../infrastructure/database/appConnection'
 
 export interface CreateTemplateDto {
   name: string
@@ -27,6 +28,11 @@ export interface UpdateTemplateDto {
   isPublished?: boolean
 }
 
+export interface DeleteTemplateOptions {
+  keepForExistingJournals?: boolean
+  deletedBy?: string
+}
+
 export interface ListTemplatesQuery {
   category?: string
   subcategory?: string
@@ -47,6 +53,61 @@ export interface AdminDeleteResult {
 }
 
 export class TemplateService {
+  private async deleteTemplateFromAppDb(id: string): Promise<void> {
+    const appConn = await getAppConnection()
+    if (!appConn) return
+    try {
+      const AppTemplate =
+        appConn.models.Template ?? appConn.model<ITemplate>('Template', Template.schema)
+      await AppTemplate.findByIdAndDelete(id)
+    } catch (err: any) {
+      console.warn('[app-db] Failed to delete template:', err?.message ?? err)
+    }
+  }
+
+  private async snapshotTemplateForJournals(template: ITemplate, deletedBy?: string): Promise<void> {
+    if (!template?._id) return
+    const appConn = await getAppConnection()
+    if (!appConn) return
+
+    try {
+      const templateId = String((template as any)._id ?? template._id)
+      const journalRefCount = await appConn.collection('journals').countDocuments({ templateId })
+
+      await appConn.collection('deletedtemplatesnapshots').updateOne(
+        { sourceTemplateId: templateId },
+        {
+          $set: {
+            sourceTemplateId: templateId,
+            snapshot: {
+              ...((template as any).toObject ? (template as any).toObject() : template),
+              _id: templateId,
+            },
+            deletedAt: new Date(),
+            deletedBy,
+            journalRefCount,
+          },
+        },
+        { upsert: true }
+      )
+    } catch (err: any) {
+      console.warn('[app-db] Failed to create deleted template snapshot:', err?.message ?? err)
+    }
+  }
+
+  private async purgeTemplateReferences(templateId: string): Promise<void> {
+    const appConn = await getAppConnection()
+    if (!appConn) return
+    try {
+      await Promise.all([
+        appConn.collection('deletedtemplatesnapshots').deleteMany({ sourceTemplateId: templateId }),
+        appConn.collection('journals').deleteMany({ templateId }),
+      ])
+    } catch (err: any) {
+      console.warn('[app-db] Failed to purge template references:', err?.message ?? err)
+    }
+  }
+
   async create(dto: CreateTemplateDto): Promise<ITemplate> {
     const template = new Template({ isPublished: true, ...dto })
     return template.save()
@@ -99,80 +160,20 @@ export class TemplateService {
     return Template.findByIdAndUpdate(id, { $set: dto }, { returnDocument: 'after', runValidators: true })
   }
 
+  async delete(id: string, options?: DeleteTemplateOptions): Promise<boolean> {
+    const existing = await Template.findById(id)
+    if (!existing) return false
 
-    async delete(id: string, deletedBy?: string, preserveForUsers = true): Promise<AdminDeleteResult> {
-      const template = await Template.findById(id).lean()
-      if (!template) {
-        return {
-          deleted: false,
-          templateId: id,
-          snapshotCreated: false,
-          journalRefCount: 0,
-          journalsRemoved: 0,
-          preserveForUsers,
-        }
-      }
-
-      const journalsCollection = mongoose.connection.collection('journals')
-      const journalRefCount = await journalsCollection.countDocuments({ templateId: id })
-
-      const session = await mongoose.startSession().catch(() => null)
-
-      try {
-        if (session) {
-          session.startTransaction()
-        }
-
-        const sessionOpts = session ? { session } : {}
-
-        let snapshotCreated = false
-        let journalsRemoved = 0
-        if (preserveForUsers && journalRefCount > 0) {
-          await DeletedTemplateSnapshot.findOneAndUpdate(
-            { sourceTemplateId: id },
-            {
-              $setOnInsert: {
-                sourceTemplateId: id,
-                snapshot: template,
-                deletedAt: new Date(),
-                deletedBy: deletedBy ?? null,
-                journalRefCount,
-              },
-            },
-            { upsert: true, ...sessionOpts },
-          )
-          snapshotCreated = true
-        } else if (!preserveForUsers) {
-          await DeletedTemplateSnapshot.deleteMany({ sourceTemplateId: id }, sessionOpts)
-          const removed = await journalsCollection.deleteMany({ templateId: id }, sessionOpts)
-          journalsRemoved = removed?.deletedCount ?? 0
-        }
-
-        await Template.deleteOne({ _id: id }, sessionOpts)
-
-        if (session) {
-          await session.commitTransaction()
-        }
-
-        return {
-          deleted: true,
-          templateId: id,
-          snapshotCreated,
-          journalRefCount,
-          journalsRemoved,
-          preserveForUsers,
-        }
-      } catch (err) {
-        if (session) {
-          await session.abortTransaction()
-        }
-        throw err
-      } finally {
-        if (session) {
-          session.endSession()
-        }
-      }
+    if (options?.keepForExistingJournals) {
+      await this.snapshotTemplateForJournals(existing, options.deletedBy)
+    } else {
+      await this.purgeTemplateReferences(String(existing._id))
     }
+
+    const result = await Template.findByIdAndDelete(id)
+    if (result) await this.deleteTemplateFromAppDb(id)
+    return result !== null
+  }
 
   async savePages(id: string, pages: IPage[]): Promise<ITemplate | null> {
     return Template.findByIdAndUpdate(id, { $set: { pages } }, { returnDocument: 'after' })
