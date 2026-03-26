@@ -2,11 +2,31 @@
 
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import { v4 as uuidv4 } from 'uuid'
+import { Agent } from 'undici'
 import type { KonvaPage } from './pdfService'
 import { importPdf as legacyImportPdf } from './pdfService'
 
 const PDF_DECOMPOSER_URL = process.env.PDF_DECOMPOSER_URL ?? 'http://localhost:5050'
+
+const decomposerAgent = new Agent({
+  connectTimeout: 30_000,       
+  headersTimeout: 0,             
+  bodyTimeout: 0,               
+  keepAliveTimeout: 120_000,   
+  keepAliveMaxTimeout: 600_000,  
+  connections: 4,                
+})
+
+const HEALTH_TTL_MS = Number(process.env.PDF_HEALTH_TTL_MS ?? '30000')
+let _lastHealthCheck: { ok: boolean; ts: number } | null = null
+
+const BACKGROUND_TIMEOUT_MS = Number(process.env.PDF_BACKGROUND_TIMEOUT_MS ?? '1800000')
+
+const JOB_TTL_MS = Number(process.env.PDF_JOB_TTL_MS ?? '1800000')
+
+const JOB_CLEANUP_INTERVAL_MS = 5 * 60 * 1000
 
 export interface FontInfo {
   name: string
@@ -24,24 +44,63 @@ export interface DecomposeResult {
 }
 
 
+export type JobStatus = 'pending' | 'processing' | 'complete' | 'failed'
+
+export interface DecomposeJob {
+  id: string
+  status: JobStatus
+  progress: number        // 0-100
+  totalPages: number      // estimated
+  message: string
+  result: DecomposeResult | null
+  error: string | null
+  createdAt: number
+  completedAt: number | null
+}
+
+const _jobs = new Map<string, DecomposeJob>()
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [id, job] of _jobs) {
+    const age = now - job.createdAt
+    if (age > JOB_TTL_MS) {
+      _jobs.delete(id)
+    }
+  }
+}, JOB_CLEANUP_INTERVAL_MS)
+
+
+
 async function isPythonServiceAvailable(): Promise<boolean> {
+  if (_lastHealthCheck && (Date.now() - _lastHealthCheck.ts) < HEALTH_TTL_MS) {
+    return _lastHealthCheck.ok
+  }
+
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 3000)
     const res = await fetch(`${PDF_DECOMPOSER_URL}/health`, {
       signal: controller.signal,
+      // @ts-expect-error — undici dispatcher option
+      dispatcher: decomposerAgent,
     })
     clearTimeout(timeout)
-    return res.ok
+    const ok = res.ok
+    _lastHealthCheck = { ok, ts: Date.now() }
+    return ok
   } catch {
+    _lastHealthCheck = { ok: false, ts: Date.now() }
     return false
   }
 }
 
 
+
 async function callPythonDecomposer(
   fileInput: string | { buffer: Buffer; filename: string },
   dpi: number = 150,
+  timeoutMs: number = BACKGROUND_TIMEOUT_MS,
 ): Promise<DecomposeResult> {
   let fileBuffer: Buffer
   let fileName: string
@@ -60,10 +119,21 @@ async function callPythonDecomposer(
 
   const url = `${PDF_DECOMPOSER_URL}/api/decompose?dpi=${dpi}&include_raster_background=0&extract_vectors=1`
 
-  const response = await fetch(url, {
-    method: 'POST',
-    body: formData,
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+      // @ts-expect-error — undici dispatcher option
+      dispatcher: decomposerAgent,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (!response.ok) {
     const errorText = await response.text()
@@ -80,7 +150,13 @@ async function callPythonDecomposer(
     throw new Error(json.message ?? 'Python decomposer returned unsuccessful response')
   }
 
-  const pages: KonvaPage[] = json.data.pages.map((p: any) => {
+  return mapDecomposeResponse(json.data)
+}
+
+
+
+function mapDecomposeResponse(data: { pages: any[]; fonts: any[] }): DecomposeResult {
+  const pages: KonvaPage[] = data.pages.map((p: any) => {
     const elements = (p.elements ?? [])
       .map((el: any) => ({
         id: el.id ?? uuidv4(),
@@ -129,7 +205,7 @@ async function callPythonDecomposer(
     }
   })
 
-  const fonts: FontInfo[] = (json.data.fonts ?? []).map((f: any) => ({
+  const fonts: FontInfo[] = (data.fonts ?? []).map((f: any) => ({
     name: f.name,
     originalName: f.originalName,
     family: f.family ?? f.name,
@@ -141,6 +217,77 @@ async function callPythonDecomposer(
 
   return { pages, fonts }
 }
+
+
+export function startDecomposeJob(
+  fileInput: { buffer: Buffer; filename: string },
+  dpi: number = 150,
+): string {
+  const jobId = uuidv4()
+
+  const job: DecomposeJob = {
+    id: jobId,
+    status: 'pending',
+    progress: 0,
+    totalPages: 0,
+    message: 'Upload received, starting decomposition…',
+    result: null,
+    error: null,
+    createdAt: Date.now(),
+    completedAt: null,
+  }
+  _jobs.set(jobId, job)
+
+  ;(async () => {
+    try {
+      job.status = 'processing'
+      job.message = 'Sending PDF to decomposer service…'
+      job.progress = 5
+
+      const pythonAvailable = await isPythonServiceAvailable()
+      if (!pythonAvailable) {
+        throw new Error('Python PDF decomposer service is unavailable')
+      }
+
+      job.message = 'Decomposing PDF (this may take a while for large documents)…'
+      job.progress = 10
+
+      const result = await callPythonDecomposer(
+        fileInput,
+        dpi,
+        BACKGROUND_TIMEOUT_MS,
+      )
+
+      job.result = result
+      job.totalPages = result.pages.length
+      job.progress = 100
+      job.status = 'complete'
+      job.message = `Successfully decomposed ${result.pages.length} pages`
+      job.completedAt = Date.now()
+
+      console.log(`[pdfDecomposeService] Job ${jobId} complete: ${result.pages.length} pages in ${((job.completedAt - job.createdAt) / 1000).toFixed(1)}s`)
+    } catch (err: any) {
+      job.status = 'failed'
+      job.error = err?.message ?? 'Unknown decomposition error'
+      job.message = `Decomposition failed: ${job.error}`
+      job.completedAt = Date.now()
+      console.error(`[pdfDecomposeService] Job ${jobId} failed:`, err?.message ?? err)
+    }
+  })()
+
+  return jobId
+}
+
+
+export function getJob(jobId: string): DecomposeJob | null {
+  return _jobs.get(jobId) ?? null
+}
+
+
+export function removeJob(jobId: string): void {
+  _jobs.delete(jobId)
+}
+
 
 
 export async function decomposePdf(

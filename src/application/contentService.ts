@@ -9,7 +9,7 @@ import { getAppConnection } from '../infrastructure/database/appConnection'
 export interface CreateContentDto {
   name: string
   description?: string
-  itemType: string  // 'template', 'sticker', 'planner', etc.
+  itemType: string  
   category?: string
   subcategory?: string
   tags?: string[]
@@ -36,56 +36,61 @@ export interface DeleteContentOptions {
 }
 
 export class ContentService {
-  private async syncContentToAppDb(content: IContent | null): Promise<void> {
+
+  private syncContentToAppDbAsync(content: IContent | null): void {
     if (!content?._id) return
-    const appConn = await getAppConnection()
-    if (!appConn) return
-
-    try {
-      const AppContent =
-        appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
-
-      const payload: Partial<IContent> & { updatedAt?: Date } = {
-        name: content.name,
-        description: content.description,
-        itemType: content.itemType,
-        category: content.category,
-        subcategory: content.subcategory,
-        tags: content.tags ?? [],
-        pages: content.pages ?? [],
-        svgContent: content.svgContent,
-        coverImageUrl: content.coverImageUrl,
-        createdBy: content.createdBy,
-        isPublished: content.isPublished,
-      }
-
-      if (content.updatedAt) payload.updatedAt = content.updatedAt
-
-      const update: Record<string, unknown> = { $set: payload }
-      if (content.createdAt) {
-        update.$setOnInsert = { createdAt: content.createdAt }
-      }
-
-      await AppContent.findByIdAndUpdate(
-        content._id,
-        update,
-        { upsert: true, setDefaultsOnInsert: true }
-      )
-    } catch (err: any) {
-      console.warn('[app-db] Failed to sync content:', err?.message ?? err)
-    }
+    this._doSyncContentToAppDb(content).catch((err: any) => {
+      console.warn('[app-db] Background sync failed:', err?.message ?? err)
+    })
   }
 
-  private async deleteContentFromAppDb(id: string): Promise<void> {
+  private async _doSyncContentToAppDb(content: IContent): Promise<void> {
     const appConn = await getAppConnection()
     if (!appConn) return
-    try {
-      const AppContent =
-        appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
-      await AppContent.findByIdAndDelete(id)
-    } catch (err: any) {
-      console.warn('[app-db] Failed to delete content:', err?.message ?? err)
+
+    const AppContent =
+      appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
+
+    const payload: Partial<IContent> & { updatedAt?: Date } = {
+      name: content.name,
+      description: content.description,
+      itemType: content.itemType,
+      category: content.category,
+      subcategory: content.subcategory,
+      tags: content.tags ?? [],
+      pages: content.pages ?? [],
+      svgContent: content.svgContent,
+      coverImageUrl: content.coverImageUrl,
+      createdBy: content.createdBy,
+      isPublished: content.isPublished,
     }
+
+    if (content.updatedAt) payload.updatedAt = content.updatedAt
+
+    const update: Record<string, unknown> = { $set: payload }
+    if (content.createdAt) {
+      update.$setOnInsert = { createdAt: content.createdAt }
+    }
+
+    await AppContent.findByIdAndUpdate(
+      content._id,
+      update,
+      { upsert: true, setDefaultsOnInsert: true }
+    )
+  }
+
+  private deleteContentFromAppDbAsync(id: string): void {
+    this._doDeleteContentFromAppDb(id).catch((err: any) => {
+      console.warn('[app-db] Background delete failed:', err?.message ?? err)
+    })
+  }
+
+  private async _doDeleteContentFromAppDb(id: string): Promise<void> {
+    const appConn = await getAppConnection()
+    if (!appConn) return
+    const AppContent =
+      appConn.models.Content ?? appConn.model<IContent>('Content', Content.schema)
+    await AppContent.findByIdAndDelete(id)
   }
 
   private async snapshotContentForJournals(content: IContent, deletedBy?: string): Promise<void> {
@@ -133,7 +138,7 @@ export class ContentService {
   async create(dto: CreateContentDto): Promise<IContent> {
     const content = new Content(dto)
     const saved = await content.save()
-    await this.syncContentToAppDb(saved)
+    this.syncContentToAppDbAsync(saved)
     return saved
   }
 
@@ -144,7 +149,6 @@ export class ContentService {
     search?: string
     isPublished?: boolean
   }): Promise<{ data: IContent[]; total: number }> {
-    // Build query filter
     const filter: Record<string, unknown> = {}
     
     if (params.itemType) filter.itemType = params.itemType
@@ -173,7 +177,7 @@ export class ContentService {
       { $set: dto },
       { returnDocument: 'after', runValidators: true }
     )
-    await this.syncContentToAppDb(updated)
+    this.syncContentToAppDbAsync(updated)
     return updated
   }
 
@@ -184,9 +188,27 @@ export class ContentService {
     const updated = await Content.findByIdAndUpdate(
       id,
       { $set: update },
-      { returnDocument: 'after' }
+      { returnDocument: 'after', projection: { pages: 0 } }
     )
-    await this.syncContentToAppDb(updated)
+    this.syncContentToAppDbAsync(updated)
+    return updated
+  }
+
+  async saveAll(
+    id: string,
+    dto: UpdateContentDto,
+    pages: object[],
+    svgContent?: string,
+  ): Promise<IContent | null> {
+    const setPayload: Record<string, unknown> = { ...dto, pages }
+    if (svgContent !== undefined) setPayload.svgContent = svgContent
+
+    const updated = await Content.findByIdAndUpdate(
+      id,
+      { $set: setPayload },
+      { returnDocument: 'after', runValidators: true, projection: { pages: 0 } }
+    )
+    this.syncContentToAppDbAsync(updated)
     return updated
   }
 
@@ -198,17 +220,18 @@ export class ContentService {
     )
 
     if (content && isPublished) {
-      const settings = await settingsService.get()
-      if (settings.enableEmailNotifications && settings.notifyOnContentPublish) {
-        emailService.send({
-          to: settings.supportEmail || undefined,
-          subject: `[Beatific Admin] Content Published: ${content.name}`,
-          text: `New content was just published to the app.\n\nName: ${content.name}\nType: ${content.itemType}\nCategory: ${content.category || 'N/A'}\nTime: ${new Date().toISOString()}`,
-        }).catch((err: any) => console.warn('[Email] Failed to send publish notification:', err.message))
-      }
+      settingsService.get().then(settings => {
+        if (settings.enableEmailNotifications && settings.notifyOnContentPublish) {
+          emailService.send({
+            to: settings.supportEmail || undefined,
+            subject: `[Beatific Admin] Content Published: ${content.name}`,
+            text: `New content was just published to the app.\n\nName: ${content.name}\nType: ${content.itemType}\nCategory: ${content.category || 'N/A'}\nTime: ${new Date().toISOString()}`,
+          }).catch((err: any) => console.warn('[Email] Failed to send publish notification:', err.message))
+        }
+      }).catch(() => { /* settings fetch failed — non-critical */ })
     }
 
-    await this.syncContentToAppDb(content)
+    this.syncContentToAppDbAsync(content)
     return content
   }
 
@@ -223,7 +246,7 @@ export class ContentService {
     }
 
     const result = await Content.findByIdAndDelete(id)
-    if (result) await this.deleteContentFromAppDb(id)
+    if (result) this.deleteContentFromAppDbAsync(id)
     return !!result
   }
 
