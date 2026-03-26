@@ -50,7 +50,7 @@ const fileFilter = (
 export const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 },  
+  limits: { fileSize: Number(process.env.IMAGE_MAX_SIZE_MB ?? process.env.PDF_MAX_SIZE_MB ?? '200') * 1024 * 1024 },  
 })
 
 export { USE_CLOUDINARY }

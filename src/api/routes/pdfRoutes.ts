@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid'
 import type { Request, Response, NextFunction } from 'express'
 import { requireAuth } from '../middleware/authMiddleware'
 import { importPdf } from '../../application/pdfService'
-import { decomposePdf } from '../../application/pdfDecomposeService'
+import { decomposePdf, startDecomposeJob, getJob, removeJob } from '../../application/pdfDecomposeService'
 
 const router = Router()
 
@@ -23,6 +23,11 @@ const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads')
 if (!USE_CLOUDINARY && !fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true })
 }
+
+const PDF_MAX_SIZE_MB = Number(process.env.PDF_MAX_SIZE_MB ?? '200')
+const PDF_MAX_SIZE    = PDF_MAX_SIZE_MB * 1024 * 1024
+
+const PDF_REQUEST_TIMEOUT_MS = Number(process.env.PDF_REQUEST_TIMEOUT_MS ?? '300000')
 
 const pdfStorage = USE_CLOUDINARY
   ? multer.memoryStorage()
@@ -48,9 +53,9 @@ const pdfFilter = (
 }
 
 const pdfUpload = multer({
-  storage:  pdfStorage,
+  storage:    pdfStorage,
   fileFilter: pdfFilter,
-  limits: { fileSize: 50 * 1024 * 1024 },   // 50 MB — covers large multi-page planners
+  limits:     { fileSize: PDF_MAX_SIZE },
 })
 
 
@@ -60,27 +65,19 @@ router.post(
   pdfUpload.single('file'),
   async (req: Request, res: Response, next: NextFunction) => {
     console.log('[pdfRoutes] /import called')
-    console.log('[pdfRoutes] req.file:', req.file ? {
-      fieldname: req.file.fieldname,
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-      hasBuffer: !!req.file.buffer,
-      hasPath: !!req.file.path,
-    } : 'undefined')
-    
     const uploadedPath = req.file?.path ?? null
     const uploadedBuffer = req.file?.buffer ?? null
 
+    req.setTimeout(PDF_REQUEST_TIMEOUT_MS)
+    res.setTimeout(PDF_REQUEST_TIMEOUT_MS)
+
     try {
       if (!req.file) {
-        console.log('[pdfRoutes] No req.file found')
         res.status(400).json({ success: false, message: 'No PDF file uploaded' })
         return
       }
       
       if (!uploadedPath && !uploadedBuffer) {
-        console.log('[pdfRoutes] No path or buffer found in file')
         res.status(400).json({ success: false, message: 'No PDF file uploaded - missing buffer/path' })
         return
       }
@@ -123,23 +120,26 @@ router.post(
         return
       }
 
-      const baseUrl = (
-        process.env.BASE_URL ?? `http://localhost:${process.env.PORT ?? 3001}`
-      ).replace(/\/+$/, '')
-
       const dpi = parseInt(req.query.dpi as string) || 150
 
-      const fileInput = uploadedBuffer
-        ? { buffer: uploadedBuffer, filename: req.file.originalname }
-        : uploadedPath!
-
-      const result = await decomposePdf(fileInput, baseUrl, dpi)
-
-      if (uploadedPath) {
-        try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
+      let buffer: Buffer
+      if (uploadedBuffer) {
+        buffer = uploadedBuffer
+      } else {
+        buffer = fs.readFileSync(uploadedPath!)
+        try { fs.unlinkSync(uploadedPath!) } catch { /* ignore */ }
       }
 
-      res.json({ success: true, data: result })
+      const jobId = startDecomposeJob(
+        { buffer, filename: req.file.originalname },
+        dpi,
+      )
+
+      res.json({
+        success: true,
+        jobId,
+        message: 'PDF upload accepted. Decomposition started in background.',
+      })
     } catch (err) {
       if (uploadedPath) {
         try { fs.unlinkSync(uploadedPath) } catch { /* ignore */ }
@@ -148,6 +148,70 @@ router.post(
     }
   },
 )
+
+
+
+router.get(
+  '/job/:jobId',
+  requireAuth,
+  (req: Request, res: Response) => {
+    const job = getJob(req.params.jobId)
+
+    if (!job) {
+      res.status(404).json({
+        success: false,
+        message: 'Job not found or expired',
+      })
+      return
+    }
+
+    if (job.status === 'complete' && job.result) {
+      res.json({
+        success: true,
+        status:     job.status,
+        progress:   job.progress,
+        totalPages: job.totalPages,
+        message:    job.message,
+        data:       job.result,
+        elapsed:    job.completedAt ? job.completedAt - job.createdAt : null,
+      })
+      return
+    }
+
+    if (job.status === 'failed') {
+      res.json({
+        success: false,
+        status:   job.status,
+        progress: job.progress,
+        message:  job.message,
+        error:    job.error,
+        elapsed:  job.completedAt ? job.completedAt - job.createdAt : null,
+      })
+      return
+    }
+
+    res.json({
+      success: true,
+      status:     job.status,
+      progress:   job.progress,
+      totalPages: job.totalPages,
+      message:    job.message,
+    })
+  },
+)
+
+
+
+router.delete(
+  '/job/:jobId',
+  requireAuth,
+  (req: Request, res: Response) => {
+    removeJob(req.params.jobId)
+    res.json({ success: true, message: 'Job removed' })
+  },
+)
+
+
 
 router.use((err: any, _req: Request, res: Response, next: NextFunction) => {
   if (err instanceof multer.MulterError) {

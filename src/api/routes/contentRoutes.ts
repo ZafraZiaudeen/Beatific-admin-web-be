@@ -57,7 +57,21 @@ router.put('/:id/pages', requireAuth, async (req: Request, res: Response, next: 
     }
     const content = await contentService.savePages(req.params.id, pages, svgContent)
     if (!content) return res.status(404).json({ success: false, message: 'Content not found' })
-    res.json({ success: true, data: content })
+    const { pages: _p, ...lightweight } = (content as any).toObject ? (content as any).toObject() : content
+    res.json({ success: true, data: { ...lightweight, pageCount: pages.length } })
+  } catch (err) { next(err) }
+})
+
+router.put('/:id/save-all', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { pages, svgContent, ...meta } = req.body
+    if (!Array.isArray(pages)) {
+      return res.status(400).json({ success: false, message: '`pages` must be an array' })
+    }
+    const content = await contentService.saveAll(req.params.id, meta, pages, svgContent)
+    if (!content) return res.status(404).json({ success: false, message: 'Content not found' })
+    const { pages: _p, ...lightweight } = (content as any).toObject ? (content as any).toObject() : content
+    res.json({ success: true, data: { ...lightweight, pageCount: pages.length } })
   } catch (err) { next(err) }
 })
 

@@ -17,8 +17,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }))
 
-app.use(express.json({ limit: '20mb' }))
-app.use(express.urlencoded({ extended: true }))
+const JSON_LIMIT = process.env.EXPRESS_JSON_LIMIT ?? '100mb'
+app.use(express.json({ limit: JSON_LIMIT }))
+app.use(express.urlencoded({ extended: true, limit: JSON_LIMIT }))
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR ?? path.join(process.cwd(), 'uploads')
 app.use('/uploads', express.static(UPLOAD_DIR))
@@ -55,6 +56,12 @@ async function start() {
     console.log(`✓ Server running  → http://localhost:${port}`)
     console.log(`✓ API base        → http://localhost:${port}/api/v1`)
   })
+
+  // Allow long-running PDF decompose requests (default 30 min)
+  const serverTimeout = Number(process.env.SERVER_TIMEOUT_MS ?? '1800000')
+  server.timeout = serverTimeout
+  server.keepAliveTimeout = serverTimeout
+  server.headersTimeout = serverTimeout + 1000
 
   server.on('error', (err) => {
     console.error('Server error:', err)
