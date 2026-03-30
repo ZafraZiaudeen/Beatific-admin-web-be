@@ -5,6 +5,7 @@ import { IContent } from '../domain/interfaces/IContent'
 import { emailService } from '../infrastructure/email/emailService'
 import { settingsService } from './settingsService'
 import { getAppConnection } from '../infrastructure/database/appConnection'
+import { refreshSchedulesForContentInAppDb } from './calendarScheduleService'
 
 export interface CreateContentDto {
   name: string
@@ -77,6 +78,8 @@ export class ContentService {
       update,
       { upsert: true, setDefaultsOnInsert: true }
     )
+
+    await refreshSchedulesForContentInAppDb(String(content._id))
   }
 
   private deleteContentFromAppDbAsync(id: string): void {
