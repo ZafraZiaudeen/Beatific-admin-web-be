@@ -5,6 +5,11 @@ import { IContent } from '../domain/interfaces/IContent'
 import { emailService } from '../infrastructure/email/emailService'
 import { settingsService } from './settingsService'
 import { getAppConnection } from '../infrastructure/database/appConnection'
+import {
+  deleteSchedulesForContentEverywhere,
+  refreshSchedulesForContentInAppDb,
+} from './calendarScheduleService'
+import { deleteCloudinaryAssetsForDeletedSource } from '../infrastructure/storage/contentAssetCleanup'
 
 export interface CreateContentDto {
   name: string
@@ -77,6 +82,8 @@ export class ContentService {
       update,
       { upsert: true, setDefaultsOnInsert: true }
     )
+
+    await refreshSchedulesForContentInAppDb(String(content._id))
   }
 
   private deleteContentFromAppDbAsync(id: string): void {
@@ -242,7 +249,14 @@ export class ContentService {
     if (options?.keepForExistingJournals) {
       await this.snapshotContentForJournals(existing, options.deletedBy)
     } else {
-      await this.purgeContentReferences(String(existing._id))
+      await Promise.all([
+        this.purgeContentReferences(String(existing._id)),
+        deleteSchedulesForContentEverywhere(String(existing._id)),
+        deleteCloudinaryAssetsForDeletedSource(existing, {
+          sourceKind: 'content',
+          sourceId: String(existing._id),
+        }),
+      ])
     }
 
     const result = await Content.findByIdAndDelete(id)

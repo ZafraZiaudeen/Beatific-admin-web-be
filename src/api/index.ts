@@ -11,6 +11,7 @@ import permissionRoutes    from './routes/permissionRoutes'
 import userRoutes          from './routes/userRoutes'
 import settingsRoutes      from './routes/settingsRoutes'
 import dashboardRoutes     from './routes/dashboardRoutes'
+import calendarScheduleRoutes from './routes/calendarScheduleRoutes'
 
 const apiRouter = Router()
 
@@ -26,6 +27,7 @@ apiRouter.use('/permissions',     permissionRoutes)
 apiRouter.use('/users',           userRoutes)
 apiRouter.use('/settings',        settingsRoutes)
 apiRouter.use('/dashboard',       dashboardRoutes)
+apiRouter.use('/calendar-schedules', calendarScheduleRoutes)
 
 apiRouter.get('/health', (_req, res) => {
   res.json({ status: 'ok', api: 'v1', time: new Date().toISOString() })
