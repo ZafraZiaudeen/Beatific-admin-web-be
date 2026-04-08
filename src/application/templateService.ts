@@ -4,6 +4,7 @@ import { DeletedTemplateSnapshot } from '../domain/models/DeletedTemplateSnapsho
 import { ITemplate } from '../domain/interfaces/ITemplate'
 import { IPage } from '../domain/interfaces/IPage'
 import { getAppConnection } from '../infrastructure/database/appConnection'
+import { deleteCloudinaryAssetsForDeletedSource } from '../infrastructure/storage/contentAssetCleanup'
 
 export interface CreateTemplateDto {
   name: string
@@ -167,7 +168,13 @@ export class TemplateService {
     if (options?.keepForExistingJournals) {
       await this.snapshotTemplateForJournals(existing, options.deletedBy)
     } else {
-      await this.purgeTemplateReferences(String(existing._id))
+      await Promise.all([
+        this.purgeTemplateReferences(String(existing._id)),
+        deleteCloudinaryAssetsForDeletedSource(existing, {
+          sourceKind: 'template',
+          sourceId: String(existing._id),
+        }),
+      ])
     }
 
     const result = await Template.findByIdAndDelete(id)

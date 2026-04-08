@@ -17,7 +17,9 @@ const CalendarScheduleSchema = new Schema<ICalendarSchedule>(
   {
     contentId: { type: String, required: true, trim: true },
     mode: { type: String, enum: ['exact', 'recurring'], required: true },
+    visibilityMode: { type: String, enum: ['date-only', 'always-visible'], default: 'date-only' },
     exactDate: { type: String },
+    exactEndDate: { type: String },
     recurrence: { type: RecurrenceSchema },
     slotLabel: { type: String, trim: true },
     startTime: { type: String, trim: true },
@@ -31,5 +33,6 @@ const CalendarScheduleSchema = new Schema<ICalendarSchedule>(
 CalendarScheduleSchema.index({ contentId: 1, isActive: 1 })
 CalendarScheduleSchema.index({ mode: 1, isActive: 1 })
 CalendarScheduleSchema.index({ exactDate: 1, isActive: 1 })
+CalendarScheduleSchema.index({ exactEndDate: 1, isActive: 1 })
 
 export const CalendarSchedule = model<ICalendarSchedule>('CalendarSchedule', CalendarScheduleSchema)

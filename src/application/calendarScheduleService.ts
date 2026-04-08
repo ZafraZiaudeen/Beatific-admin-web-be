@@ -25,6 +25,14 @@ function addMonths(date: Date, months: number): Date {
   return copy
 }
 
+function listDateRange(start: Date, end: Date, max: number): string[] {
+  const results: string[] = []
+  for (let cursor = start; cursor <= end && results.length < max; cursor = addDays(cursor, 1)) {
+    results.push(toDateStr(cursor))
+  }
+  return results
+}
+
 function startOfTodayUtc(): Date {
   return toUtcDate(toDateStr(new Date()))
 }
@@ -38,7 +46,7 @@ function getWeekdayName(date: Date): string {
 }
 
 function listOccurrences(
-  schedule: Pick<ICalendarSchedule, 'mode' | 'exactDate' | 'recurrence'>,
+  schedule: Pick<ICalendarSchedule, 'mode' | 'exactDate' | 'exactEndDate' | 'recurrence'>,
   options?: { from?: string; to?: string; max?: number }
 ): string[] {
   const from = options?.from ? toUtcDate(options.from) : startOfTodayUtc()
@@ -47,9 +55,12 @@ function listOccurrences(
 
   if (schedule.mode === 'exact') {
     if (!schedule.exactDate) return []
-    const exact = toUtcDate(schedule.exactDate)
-    if (exact < from || exact > to) return []
-    return [schedule.exactDate]
+    const exactStart = toUtcDate(schedule.exactDate)
+    const exactEnd = schedule.exactEndDate ? toUtcDate(schedule.exactEndDate) : exactStart
+    const windowStart = exactStart > from ? exactStart : from
+    const windowEnd = exactEnd < to ? exactEnd : to
+    if (windowEnd < windowStart) return []
+    return listDateRange(windowStart, windowEnd, max)
   }
 
   if (!schedule.recurrence?.startDate) return []
@@ -110,10 +121,15 @@ function listOccurrences(
 }
 
 function sanitizePayload(input: Partial<ICalendarSchedule>) {
+  const requestedVisibilityMode =
+    input.visibilityMode === 'always-visible' ? 'always-visible' : 'date-only'
+
   const payload: Partial<ICalendarSchedule> = {
     contentId: input.contentId ? String(input.contentId) : undefined,
     mode: input.mode,
+    visibilityMode: requestedVisibilityMode,
     exactDate: input.exactDate || undefined,
+    exactEndDate: input.exactEndDate || undefined,
     slotLabel: input.slotLabel ? String(input.slotLabel).trim() : undefined,
     startTime: input.startTime ? String(input.startTime).trim() : undefined,
     isActive: input.isActive ?? true,
@@ -133,6 +149,8 @@ function sanitizePayload(input: Partial<ICalendarSchedule>) {
     payload.recurrence = undefined
   } else {
     payload.exactDate = undefined
+    payload.exactEndDate = undefined
+    payload.visibilityMode = 'date-only'
   }
 
   return payload
@@ -155,6 +173,16 @@ async function assertValidScheduleInput(payload: Partial<ICalendarSchedule>) {
   if (payload.mode === 'exact') {
     if (!payload.exactDate || !/^\d{4}-\d{2}-\d{2}$/.test(payload.exactDate)) {
       const err: any = new Error('exactDate is required in YYYY-MM-DD format')
+      err.statusCode = 400
+      throw err
+    }
+    if (payload.exactEndDate && !/^\d{4}-\d{2}-\d{2}$/.test(payload.exactEndDate)) {
+      const err: any = new Error('exactEndDate must be in YYYY-MM-DD format')
+      err.statusCode = 400
+      throw err
+    }
+    if (payload.exactEndDate && payload.exactEndDate < payload.exactDate) {
+      const err: any = new Error('exactEndDate cannot be before exactDate')
       err.statusCode = 400
       throw err
     }
@@ -289,7 +317,9 @@ async function syncScheduleToAppDb(schedule: ICalendarSchedule | null): Promise<
       $set: {
         contentId: String(schedule.contentId),
         mode: schedule.mode,
+        visibilityMode: schedule.visibilityMode ?? 'date-only',
         exactDate: schedule.exactDate,
+        exactEndDate: schedule.exactEndDate,
         recurrence: schedule.recurrence,
         slotLabel: schedule.slotLabel,
         startTime: schedule.startTime,
@@ -314,11 +344,37 @@ async function deleteScheduleFromAppDb(scheduleId: string): Promise<void> {
   await appConn.collection('calendarschedules').deleteOne({ _id: new mongoose.Types.ObjectId(scheduleId) })
 }
 
+async function deleteSchedulesForContentFromAppDb(contentId: string): Promise<void> {
+  const appConn = await getAppConnection()
+  if (!appConn) return
+
+  const schedules = await appConn
+    .collection('calendarschedules')
+    .find({ contentId }, { projection: { _id: 1 } })
+    .toArray()
+
+  const scheduleIds = schedules.map((schedule) => String((schedule as any)._id)).filter(Boolean)
+
+  await Promise.all([
+    appConn.collection('calendarschedules').deleteMany({ contentId }),
+    scheduleIds.length
+      ? appConn.collection('journals').deleteMany({ scheduleId: { $in: scheduleIds } })
+      : Promise.resolve(),
+  ])
+}
+
 export async function refreshSchedulesForContentInAppDb(contentId: string): Promise<void> {
   const schedules = await CalendarSchedule.find({ contentId, isActive: true }).lean()
   for (const schedule of schedules) {
     await materializeScheduleInAppDb(schedule as ICalendarSchedule)
   }
+}
+
+export async function deleteSchedulesForContentEverywhere(contentId: string): Promise<void> {
+  await Promise.all([
+    CalendarSchedule.deleteMany({ contentId }),
+    deleteSchedulesForContentFromAppDb(contentId),
+  ])
 }
 
 export const calendarScheduleService = {
@@ -338,7 +394,7 @@ export const calendarScheduleService = {
   async preview(body: Partial<ICalendarSchedule>) {
     const payload = sanitizePayload(body)
     await assertValidScheduleInput(payload)
-    return listOccurrences(payload as Pick<ICalendarSchedule, 'mode' | 'exactDate' | 'recurrence'>, { max: 12 })
+    return listOccurrences(payload as Pick<ICalendarSchedule, 'mode' | 'exactDate' | 'exactEndDate' | 'recurrence'>, { max: 12 })
   },
 
   async create(body: Partial<ICalendarSchedule>, adminId?: string) {
