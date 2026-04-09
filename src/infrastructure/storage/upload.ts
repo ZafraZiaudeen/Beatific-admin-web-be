@@ -1,7 +1,7 @@
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
-import { v4 as uuidv4 } from 'uuid'
+import crypto from 'crypto'
 import type { Request } from 'express'
 import { uploadToCloudinary, deleteFromCloudinary } from './cloudinary'
 
@@ -29,7 +29,7 @@ const storage = USE_CLOUDINARY
       destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
       filename: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase()
-        cb(null, `${uuidv4()}${ext}`)
+        cb(null, `${crypto.randomUUID()}${ext}`)
       },
     })
 
