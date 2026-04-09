@@ -21,7 +21,8 @@
     "multer": "^2.0.2",
     "nodemon": "^3.1.13",
     "pdfjs-dist": "^5.4.624",
-    "undici": "^7.24.5"
+    "undici": "^7.24.5",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
@@ -30,6 +31,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/mongoose": "^5.11.96",
     "@types/multer": "^2.0.0",
+    "@types/uuid": "^10.0.0",
     "@types/node": "^20.19.33",
     "mongodb-memory-server": "^11.0.1",
     "ts-node": "^10.9.2",
