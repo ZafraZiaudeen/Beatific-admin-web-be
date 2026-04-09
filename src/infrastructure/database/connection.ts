@@ -2,12 +2,25 @@ import mongoose from 'mongoose'
 
 let isConnected = false
 
+function resolveMongoUri(): string | undefined {
+  // Support local/dev naming and common Railway Mongo variables.
+  return (
+    process.env.MONGODB_URL ??
+    process.env.MONGODB_URI ??
+    process.env.MONGO_PRIVATE_URL ??
+    process.env.MONGO_URL ??
+    process.env.MONGO_PUBLIC_URL
+  )
+}
+
 export async function connectDatabase(): Promise<void> {
   if (isConnected) return
 
-  const uri = process.env.MONGODB_URL ?? process.env.MONGODB_URI
+  const uri = resolveMongoUri()
   if (!uri) {
-    throw new Error('MONGODB_URL (or MONGODB_URI) environment variable is not set')
+    throw new Error(
+      'MongoDB connection env var is not set. Expected one of: MONGODB_URL, MONGODB_URI, MONGO_PRIVATE_URL, MONGO_URL, MONGO_PUBLIC_URL'
+    )
   }
 
   await mongoose.connect(uri)
