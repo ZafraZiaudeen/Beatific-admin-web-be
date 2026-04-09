@@ -82,7 +82,7 @@ async function isPythonServiceAvailable(): Promise<boolean> {
     const timeout = setTimeout(() => controller.abort(), 3000)
     const res = await fetch(`${PDF_DECOMPOSER_URL}/health`, {
       signal: controller.signal,
-      // @ts-expect-error — undici dispatcher option
+      // @ts-ignore - undici dispatcher option is available at runtime
       dispatcher: decomposerAgent,
     })
     clearTimeout(timeout)
@@ -128,7 +128,7 @@ async function callPythonDecomposer(
       method: 'POST',
       body: formData,
       signal: controller.signal,
-      // @ts-expect-error — undici dispatcher option
+      // @ts-ignore - undici dispatcher option is available at runtime
       dispatcher: decomposerAgent,
     })
   } finally {
