@@ -2,7 +2,7 @@ import { Router } from 'express'
 import path from 'path'
 import fs from 'fs'
 import multer from 'multer'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import type { Request, Response, NextFunction } from 'express'
 import { requireAuth } from '../middleware/authMiddleware'
 import { importPdf } from '../../application/pdfService'
@@ -35,7 +35,7 @@ const pdfStorage = USE_CLOUDINARY
       destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
       filename:    (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase()
-        cb(null, `upload_${uuidv4()}${ext}`)
+        cb(null, `upload_${randomUUID()}${ext}`)
       },
     })
 

@@ -3,7 +3,7 @@
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import { Agent } from 'undici'
 import type { KonvaPage } from './pdfService'
 import { importPdf as legacyImportPdf } from './pdfService'
@@ -159,7 +159,7 @@ function mapDecomposeResponse(data: { pages: any[]; fonts: any[] }): DecomposeRe
   const pages: KonvaPage[] = data.pages.map((p: any) => {
     const elements = (p.elements ?? [])
       .map((el: any) => ({
-        id: el.id ?? uuidv4(),
+        id: el.id ?? randomUUID(),
         type: el.type,
         x: el.x ?? 0,
         y: el.y ?? 0,
@@ -196,7 +196,7 @@ function mapDecomposeResponse(data: { pages: any[]; fonts: any[] }): DecomposeRe
       .sort((a: any, b: any) => (a.zIndex ?? 0) - (b.zIndex ?? 0))
 
     return {
-      id: p.id ?? uuidv4(),
+      id: p.id ?? randomUUID(),
       name: p.name ?? 'Page',
       elements,
       background: p.background ?? '#ffffff',
@@ -223,7 +223,7 @@ export function startDecomposeJob(
   fileInput: { buffer: Buffer; filename: string },
   dpi: number = 150,
 ): string {
-  const jobId = uuidv4()
+  const jobId = randomUUID()
 
   const job: DecomposeJob = {
     id: jobId,

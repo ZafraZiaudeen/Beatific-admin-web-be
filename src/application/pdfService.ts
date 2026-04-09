@@ -1,7 +1,7 @@
 import path from 'path'
 import fs from 'fs'
 import { pathToFileURL } from 'url'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 import { createCanvas } from '@napi-rs/canvas'
 import { uploadToCloudinary } from '../infrastructure/storage/cloudinary'
 
@@ -265,7 +265,7 @@ export async function importPdf(
           })
           bgImageSrc = result.secureUrl
         } else {
-          const pngFilename = `pdf_bg_${uuidv4()}.png`
+          const pngFilename = `pdf_bg_${randomUUID()}.png`
           fs.writeFileSync(path.join(UPLOAD_DIR, pngFilename), pngBuffer)
           bgImageSrc = `${baseUrl}/uploads/${pngFilename}`
         }
@@ -278,7 +278,7 @@ export async function importPdf(
 
     if (bgImageSrc) {
       elements.push({
-        id:      uuidv4(),
+        id:      randomUUID(),
         type:    'image',
         x:       0,
         y:       0,
@@ -336,7 +336,7 @@ export async function importPdf(
 
       for (const frag of merged) {
         elements.push({
-          id:         uuidv4(),
+          id:         randomUUID(),
           type:       'text',
           x:          frag.x,
           y:          frag.y,
@@ -356,7 +356,7 @@ export async function importPdf(
     }
 
     pages.push({
-      id:         uuidv4(),
+      id:         randomUUID(),
       name:       numPages === 1 ? 'Page 1' : `Page ${pageNum}`,
       elements,
       background: '#ffffff',
